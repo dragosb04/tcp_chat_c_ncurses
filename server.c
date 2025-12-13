@@ -17,6 +17,18 @@ typedef struct {
 client_t clients[MAX_CLIENTS];
 pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+void add_client(int socket, char *name) {
+    pthread_mutex_lock(&clients_mutex);
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (clients[i].sockfd == 0) {
+            clients[i].sockfd = socket;
+            strcpy(clients[i].name, name);
+            break;
+        }
+    }
+    pthread_mutex_unlock(&clients_mutex);
+}
+
 void send_to_client(int fd, const char *msg) {
     send(fd, msg, strlen(msg), 0);
 }

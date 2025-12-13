@@ -16,6 +16,26 @@ WINDOW *win_input;
 
 pthread_mutex_t ui_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+
+void handle_input(WINDOW *win, char *buffer, int *pos) {
+    int ch = wgetch(win);
+    if (ch != ERR) {
+        if (ch == 127 || ch == KEY_BACKSPACE) { // Backspace
+            if (*pos > 0) {
+                (*pos)--;
+                buffer[*pos] = '\0';
+                mvwdelch(win, 1, 1 + *pos); // Șterge vizual
+            }
+        } else if (ch == '\n') {
+            // Enter detectat - procesare externă
+        } else if (*pos < BUFFER_SIZE - 1) {
+            buffer[*pos] = ch;
+            (*pos)++;
+            waddch(win, ch);
+        }
+    }
+}
+
 void ui_add_message(const char *msg) {
     pthread_mutex_lock(&ui_mutex);
 
@@ -45,6 +65,21 @@ void *receive_messages(void *arg) {
     }
 
     return NULL;
+}
+
+int connect_to_server(const char *ip, int port) {
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) return -1;
+
+    struct sockaddr_in server_addr;
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(port);
+    server_addr.sin_addr.s_addr = inet_addr(ip);
+
+    if (connect(fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        return -1;
+    }
+    return fd;
 }
 
 int main(int argc, char *argv[]) {
