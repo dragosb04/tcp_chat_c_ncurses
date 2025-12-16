@@ -4,29 +4,14 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <arpa/inet.h>
-#include <ncurses.h>
+#include "ui.h"
 
 #define BUFFER_SIZE 1024
 
 int sockfd;
 
-// Ferestre NCURSES
-WINDOW *win_messages;
-WINDOW *win_input;
-
 pthread_mutex_t ui_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-void ui_add_message(const char *msg) {
-    pthread_mutex_lock(&ui_mutex);
-
-    // Adaugă mesaj și face scroll
-    wprintw(win_messages, "%s\n", msg);
-    wrefresh(win_messages);
-
-    pthread_mutex_unlock(&ui_mutex);
-}
-
-// Thread pentru recepția mesajelor
 void *receive_messages(void *arg) {
     char buffer[BUFFER_SIZE];
 
@@ -34,14 +19,47 @@ void *receive_messages(void *arg) {
         int bytes = recv(sockfd, buffer, sizeof(buffer) - 1, 0);
 
         if (bytes <= 0) {
-            ui_add_message("\n[Disconnected from server]\n");
+            // Afiseaza mesajul de deconectare
+            ui_render_chat("[Disconnected from server]", "SYSTEM");
             close(sockfd);
-            endwin();
+            ui_shutdown(); // Foloseste functia din ui.h
             exit(0);
         }
 
         buffer[bytes] = '\0';
-        ui_add_message(buffer);
+        
+        // Logica de parsare a mesajului primit de la server
+        // Mesajul are formatul general: [NUME]: TEXT
+        
+        char *message_text = strchr(buffer, ':');
+        
+        if (message_text != NULL) {
+            // Extrage numele utilizatorului/server-ului
+            char user_name[50] = {0};
+            int name_len = message_text - buffer;
+            
+            // Verifica daca mesajul incepe cu '[' si contine ']:' (format standard)
+            if (buffer[0] == '[' && buffer[name_len - 1] == ']') {
+                // Copiaza numele (fara parantezele [ si ])
+                strncpy(user_name, buffer + 1, name_len - 2);
+                user_name[name_len - 2] = '\0';
+                
+                // Textul mesajului incepe dupa ': '
+                message_text += 2; 
+
+                // Afiseaza mesajul folosind functia din ui.h
+                ui_render_chat(message_text, user_name);
+
+            } else {
+                // Mesaj fara format standard (il tratam ca pe un mesaj de la server)
+                ui_render_chat(buffer, "SERVER"); 
+            }
+            
+        } else {
+            // Mesaj care nu contine ':', cel mai probabil un mesaj simplu de la server
+            ui_render_chat(buffer, "SERVER");
+        }
+        
     }
 
     return NULL;
@@ -49,18 +67,15 @@ void *receive_messages(void *arg) {
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
-        printf("Usage: ./client [name]\n");
+        printf("Utilizare: ./client [nume]\n");
         exit(1);
     }
 
     char *name = argv[1];
 
     struct sockaddr_in server_addr;
-    char input_buffer[BUFFER_SIZE];
 
-    // Creează socket
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd < 0) {
+    if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         perror("socket");
         exit(1);
     }
@@ -68,7 +83,7 @@ int main(int argc, char *argv[]) {
     // Setări server
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(8080);
-    server_addr.sin_addr.s_addr = inet_addr("127.0.01");
+    server_addr.sin_addr.s_addr = inet_addr("127.0.0.1"); 
 
     if (connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
         perror("connect");
@@ -79,25 +94,9 @@ int main(int argc, char *argv[]) {
     send(sockfd, name, strlen(name), 0);
 
     // ===============================
-    //  INITIALIZARE NCURSES
+    //  INITIALIZARE NCURSES CU UI.H
     // ===============================
-    initscr();
-    noecho();
-    cbreak();
-
-    int height = LINES;
-    int width = COLS;
-
-    win_messages = newwin(height - 3, width, 0, 0);
-    win_input = newwin(3, width, height - 3, 0);
-
-    scrollok(win_messages, TRUE);
-    scrollok(win_input, TRUE);
-
-    box(win_input, 0, 0);
-
-    wrefresh(win_messages);
-    wrefresh(win_input);
+    ui_init("Camera de Chat"); // Foloseste functia din ui.h
 
     // Thread pentru recepție
     pthread_t recv_thread;
@@ -105,25 +104,27 @@ int main(int argc, char *argv[]) {
     pthread_detach(recv_thread);
 
     // ===============================
-    //  LOOP INPUT UTILIZATOR
+    //  LOOP INPUT UTILIZATOR CU UI.H
     // ===============================
-while (1) {
-    werase(win_input);
-    box(win_input, 0, 0);
+    char *input_buffer;
+    while (1) {
+        // ui_get_message returneaza un string alocat dinamic sau NULL la iesire (ex: F1)
+        input_buffer = ui_get_message(); 
 
-    echo(); // vezi ce tastezi
-    mvwgetnstr(win_input, 1, 1, input_buffer, BUFFER_SIZE - 1);
-    noecho(); // dezactivăm pentru restul programului
+        if (input_buffer == NULL) { 
+            // Semnal de iesire
+            break;
+        }
 
-    send(sockfd, input_buffer, strlen(input_buffer), 0);
+        // Trimite mesajul la server
+        send(sockfd, input_buffer, strlen(input_buffer), 0);
+        free(input_buffer); // Elibereaza memoria alocata de ui_get_message
+    }
 
-    werase(win_input);
-    box(win_input, 0, 0);
-    wrefresh(win_input);
-}
-
-
-    endwin();
+    // ===============================
+    //  OPRIRE NCURSES CU UI.H
+    // ===============================
+    ui_shutdown(); // Foloseste functia din ui.h
     close(sockfd);
     return 0;
 }

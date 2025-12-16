@@ -167,19 +167,3 @@ void ui_render_chat(char* message,char* user) {
 void ui_shutdown() {
     endwin();
 }
-
-int main(void) {
-    char* message=malloc(sizeof(char)*MESSAGE_MAX_LEN);
-    ui_init("Room 1");
-    while (1) {
-        message=ui_get_message();
-        if (message == NULL) {
-            break;
-        }
-        ui_render_chat(message,"User");
-
-
-    }
-    ui_shutdown();
-    return 0;
-}
