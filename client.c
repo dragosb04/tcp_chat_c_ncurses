@@ -13,55 +13,59 @@ int sockfd;
 pthread_mutex_t ui_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void *receive_messages(void *arg) {
-    char buffer[BUFFER_SIZE];
+    char peek_buffer[BUFFER_SIZE];
+    char user_name[50];
+    char message_text[BUFFER_SIZE];
 
     while (1) {
-        int bytes = recv(sockfd, buffer, sizeof(buffer) - 1, 0);
+        // 1. Primul "recv" (cu MSG_PEEK): Vedem ce a trimis serverul fără a șterge datele
+        int total_bytes = recv(sockfd, peek_buffer, sizeof(peek_buffer) - 1, MSG_PEEK);
+        if (total_bytes <= 0) break;
+        peek_buffer[total_bytes] = '\0';
 
-        if (bytes <= 0) {
-            // Afiseaza mesajul de deconectare
-            ui_render_chat("[Disconnected from server]", "SYSTEM");
-            close(sockfd);
-            ui_shutdown(); // Foloseste functia din ui.h
-            exit(0);
-        }
+        // Căutăm separatorul ':' folosit de server
+        char *separator = strchr(peek_buffer, ':');
 
-        buffer[bytes] = '\0';
-        
-        // Logica de parsare a mesajului primit de la server
-        // Mesajul are formatul general: [NUME]: TEXT
-        
-        char *message_text = strchr(buffer, ':');
-        
-        if (message_text != NULL) {
-            // Extrage numele utilizatorului/server-ului
-            char user_name[50] = {0};
-            int name_len = message_text - buffer;
-            
-            // Verifica daca mesajul incepe cu '[' si contine ']:' (format standard)
-            if (buffer[0] == '[' && buffer[name_len - 1] == ']') {
-                // Copiaza numele (fara parantezele [ si ])
-                strncpy(user_name, buffer + 1, name_len - 2);
-                user_name[name_len - 2] = '\0';
-                
-                // Textul mesajului incepe dupa ': '
-                message_text += 2; 
+        if (separator != NULL) {
+            // Calculăm lungimea numelui (până la ':')
+            int name_len_in_buffer = (separator - peek_buffer);
 
-                // Afiseaza mesajul folosind functia din ui.h
-                ui_render_chat(message_text, user_name);
+            // 2. Al doilea "recv" (REAL): Extragem numele și separatorul ": "
+            // Acum datele sunt scoase definitiv din buffer-ul sistemului
+            int n_bytes = recv(sockfd, user_name, name_len_in_buffer + 2, 0);
+            user_name[n_bytes] = '\0';
 
-            } else {
-                // Mesaj fara format standard (il tratam ca pe un mesaj de la server)
-                ui_render_chat(buffer, "SERVER"); 
+            // --- LOGICA DE CURĂȚARE PENTRU A ELIMINA [[ ]]: ---
+            char *clean_name = user_name;
+
+            // Eliminăm ':' și spațiul de la finalul numelui extras
+            user_name[name_len_in_buffer] = '\0';
+
+            // Dacă numele începe cu '[', sărim peste el
+            if (clean_name[0] == '[') clean_name++;
+
+            // Dacă numele se termină cu ']', îl tăiem
+            int len = strlen(clean_name);
+            if (len > 0 && clean_name[len - 1] == ']') {
+                clean_name[len - 1] = '\0';
             }
-            
-        } else {
-            // Mesaj care nu contine ':', cel mai probabil un mesaj simplu de la server
-            ui_render_chat(buffer, "SERVER");
-        }
-        
-    }
 
+            // 3. Al treilea apel recv (pentru corpul mesajului)
+            // Deși ai cerut 2 recv, tehnic ai nevoie de unul pentru a "goli" restul bufferului
+            int remaining = total_bytes - (name_len_in_buffer + 2);
+            int m_bytes = recv(sockfd, message_text, remaining, 0);
+            message_text[m_bytes] = '\0';
+
+            // Afișare în UI - ui_render_chat va adăuga el singur [ ] și :
+            ui_render_chat(message_text, clean_name);
+
+        } else {
+            // Dacă nu există ':' (mesaj simplu), îl citim complet dintr-un singur recv
+            int b = recv(sockfd, message_text, total_bytes, 0);
+            message_text[b] = '\0';
+            ui_render_chat(message_text, "SERVER");
+        }
+    }
     return NULL;
 }
 
