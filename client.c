@@ -18,49 +18,43 @@ void *receive_messages(void *arg) {
     char message_text[BUFFER_SIZE];
 
     while (1) {
-        // 1. Primul "recv" (cu MSG_PEEK): Vedem ce a trimis serverul fără a șterge datele
+        // 1. Primul "recv" (cu MSG_PEEK): Vedem ce a trimis serverul
         int total_bytes = recv(sockfd, peek_buffer, sizeof(peek_buffer) - 1, MSG_PEEK);
         if (total_bytes <= 0) break;
         peek_buffer[total_bytes] = '\0';
 
-        // Căutăm separatorul ':' folosit de server
+        // Cautam separatorul ':' folosit de server
         char *separator = strchr(peek_buffer, ':');
 
         if (separator != NULL) {
-            // Calculăm lungimea numelui (până la ':')
             int name_len_in_buffer = (separator - peek_buffer);
 
-            // 2. Al doilea "recv" (REAL): Extragem numele și separatorul ": "
+            // 2. Al doilea "recv" (REAL): Extragem numele si separatorul ": "
             // Acum datele sunt scoase definitiv din buffer-ul sistemului
             int n_bytes = recv(sockfd, user_name, name_len_in_buffer + 2, 0);
             user_name[n_bytes] = '\0';
 
-            // --- LOGICA DE CURĂȚARE PENTRU A ELIMINA [[ ]]: ---
+            // --- LOGICA DE CURATARE PENTRU A ELIMINA [[ ]]: ---
             char *clean_name = user_name;
 
-            // Eliminăm ':' și spațiul de la finalul numelui extras
             user_name[name_len_in_buffer] = '\0';
 
-            // Dacă numele începe cu '[', sărim peste el
             if (clean_name[0] == '[') clean_name++;
 
-            // Dacă numele se termină cu ']', îl tăiem
             int len = strlen(clean_name);
             if (len > 0 && clean_name[len - 1] == ']') {
                 clean_name[len - 1] = '\0';
             }
 
             // 3. Al treilea apel recv (pentru corpul mesajului)
-            // Deși ai cerut 2 recv, tehnic ai nevoie de unul pentru a "goli" restul bufferului
             int remaining = total_bytes - (name_len_in_buffer + 2);
             int m_bytes = recv(sockfd, message_text, remaining, 0);
             message_text[m_bytes] = '\0';
 
-            // Afișare în UI - ui_render_chat va adăuga el singur [ ] și :
             ui_render_chat(message_text, clean_name);
 
         } else {
-            // Dacă nu există ':' (mesaj simplu), îl citim complet dintr-un singur recv
+            // Daca nu exista ':' (mesaj simplu), îl citim complet dintr-un singur recv
             int b = recv(sockfd, message_text, total_bytes, 0);
             message_text[b] = '\0';
             ui_render_chat(message_text, "SERVER");
@@ -84,7 +78,6 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
-    // Setări server
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(8080);
     server_addr.sin_addr.s_addr = inet_addr("127.0.0.1"); 
@@ -94,41 +87,31 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
-    // Trimite numele
     send(sockfd, name, strlen(name), 0);
 
-    // ===============================
     //  INITIALIZARE NCURSES CU UI.H
-    // ===============================
     ui_init("Camera de Chat"); // Foloseste functia din ui.h
 
-    // Thread pentru recepție
     pthread_t recv_thread;
     pthread_create(&recv_thread, NULL, receive_messages, NULL);
     pthread_detach(recv_thread);
 
-    // ===============================
     //  LOOP INPUT UTILIZATOR CU UI.H
-    // ===============================
+
     char *input_buffer;
     while (1) {
-        // ui_get_message returneaza un string alocat dinamic sau NULL la iesire (ex: F1)
         input_buffer = ui_get_message(); 
 
-        if (input_buffer == NULL) { 
-            // Semnal de iesire
+        if (input_buffer == NULL) {
             break;
         }
 
-        // Trimite mesajul la server
         send(sockfd, input_buffer, strlen(input_buffer), 0);
-        free(input_buffer); // Elibereaza memoria alocata de ui_get_message
+        free(input_buffer);
     }
 
-    // ===============================
     //  OPRIRE NCURSES CU UI.H
-    // ===============================
-    ui_shutdown(); // Foloseste functia din ui.h
+    ui_shutdown();
     close(sockfd);
     return 0;
 }
