@@ -158,8 +158,49 @@ char* ui_get_message() {
 
 }
 
+void ui_update_users(char **names, int count) {
+    werase(users);
+    box(users, 0, 0);
+
+    width_chat  = (int)(CHAT_WIDTH_RATIO * COLS);
+    height_chat = LINES - (TEXTBOX_HEIGHT + TOP_MARGIN + (TEXTBOX_OFFSET - TEXTBOX_HEIGHT));
+
+    startx_chat = SIDE_MARGIN;
+    starty_chat = TOP_MARGIN;
+
+    startx_users = startx_chat + width_chat;
+    starty_users = TOP_MARGIN;
+
+    char participants_text[]="Chat participants";
+    init_pair(2, COLOR_CYAN, COLOR_BLACK);
+    attron(COLOR_PAIR(2) | A_UNDERLINE | A_BOLD);
+    mvprintw(starty_users+1, startx_users+6,"%s", participants_text);
+    attroff(COLOR_PAIR(2) | A_UNDERLINE | A_BOLD);
+
+    for (int i = 0; i < count; i++) {
+        mvwprintw(users, i + 3, 2, "%s", names[i]);
+    }
+
+    wrefresh(users);
+}
+
 void ui_render_chat(char* message,char* user) {
-    mvwprintw(chat, message_count + 1, 1, "[%s]: %s",user, message);
+
+	// Dacă am depășit înălțimea ferestrei, facem scroll
+    if (message_count >= height_chat - 2) {
+        // Șterge prima linie și mută totul în sus
+        for (int i = 1; i < height_chat - 2; i++) {
+            char line[width_chat];
+            mvwinnstr(chat, i + 1, 1, line, width_chat - 2);
+            mvwprintw(chat, i, 1, "%-*s", width_chat - 2, line);
+        }
+        // Șterge ultima linie
+        mvwprintw(chat, height_chat - 2, 1, "%-*s", width_chat - 2, "");
+        message_count = height_chat - 3;
+    }
+
+
+    mvwprintw(chat, message_count + 1, 1, "[%s]: %s", user, message);
     wrefresh(chat);
     message_count++;
 }

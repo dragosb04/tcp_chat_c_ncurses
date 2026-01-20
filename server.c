@@ -21,6 +21,34 @@ void send_to_client(int fd, const char *msg) {
     send(fd, msg, strlen(msg), 0);
 }
 
+void send_user_list() {
+    char buffer[BUFFER_SIZE] = "USERS ";
+
+    pthread_mutex_lock(&clients_mutex);
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (clients[i].sockfd != 0) {
+            strcat(buffer, clients[i].name);
+            strcat(buffer, ",");
+        }
+    }
+    pthread_mutex_unlock(&clients_mutex);
+
+    int len = strlen(buffer);
+	if ( len > 6 ){
+    	if (buffer[len - 1] == ','){
+			buffer[len - 1] = '\0';
+		}
+	}
+
+	strcat(buffer, "\n");
+
+    pthread_mutex_lock(&clients_mutex);
+    for (int i = 0; i < MAX_CLIENTS; i++)
+        if (clients[i].sockfd != 0)
+            send(clients[i].sockfd, buffer, strlen(buffer), 0);
+    pthread_mutex_unlock(&clients_mutex);
+}
+
 void broadcast_message(char *msg, int sender_fd) {
     char message_out[BUFFER_SIZE + 100];
 
@@ -46,7 +74,7 @@ void broadcast_message(char *msg, int sender_fd) {
         pthread_mutex_unlock(&clients_mutex);
 
         if (receiver_fd != -1) {
-            snprintf(message_out, sizeof(message_out), "[PM %s to %s]: %s", sender_name, receiver, pm_text);
+            snprintf(message_out, sizeof(message_out), "[PM %s to %s]: %s\n", sender_name, receiver, pm_text);
 
             send_to_client(receiver_fd, message_out);
             send_to_client(sender_fd, message_out);
@@ -62,9 +90,9 @@ void broadcast_message(char *msg, int sender_fd) {
     pthread_mutex_unlock(&clients_mutex);
 
     if (sender_fd != -1)
-        snprintf(message_out, sizeof(message_out), "%s: %s", sender_name, msg);
+        snprintf(message_out, sizeof(message_out), "[%s]: %s\n", sender_name, msg);
     else
-        snprintf(message_out, sizeof(message_out), "%s", msg);
+        snprintf(message_out, sizeof(message_out), "%s\n", msg);
 
     pthread_mutex_lock(&clients_mutex);
     for (int i = 0; i < MAX_CLIENTS; i++) {
@@ -80,6 +108,7 @@ void client_disconnected(int index) {
     snprintf(msg, sizeof(msg), "[Server]: %s s-a deconectat.", clients[index].name);
     broadcast_message(msg, -1);
     printf("%s s-a deconectat.\n", clients[index].name);
+	send_user_list();
     close(clients[index].sockfd);
     clients[index].sockfd = 0;
     clients[index].name[0] = '\0';
@@ -163,15 +192,20 @@ int main() {
         }
 
         char connect_msg[BUFFER_SIZE];
-        snprintf(connect_msg, sizeof(connect_msg),"[Server]: %s s-a conectat!", name);
+        snprintf(connect_msg, sizeof(connect_msg),"[Server]: %s s-a conectat!\n", name);
         printf("%s s-a conectat.\n", name);
         broadcast_message(connect_msg, -1);
 
+		send_user_list();
+
 
         pthread_t tid;
-        pthread_create(&tid, NULL, handle_client, &new_client);
+        int *client_fd_ptr = malloc(sizeof(int));
+        *client_fd_ptr = new_client;
+        pthread_create(&tid, NULL, handle_client, client_fd_ptr);
         pthread_detach(tid);
     }
 
+	close(server_fd);
     return 0;
 }

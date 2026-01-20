@@ -10,6 +10,8 @@ char* ui_get_message(void);
 
 void ui_render_chat(char *message, char *user);
 
+void ui_update_users(char **names, int count);
+
 void ui_shutdown(void);
 
 #endif
